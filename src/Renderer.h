@@ -1,0 +1,41 @@
+#pragma once
+#include <d3d11.h>
+#include <dxgi.h>
+#include <d3dcompiler.h>
+#include <string>
+#include <vector>
+
+struct Vertex { float x, y, z, u, v; };
+struct ConstantBuffer { float mvp[16]; };
+
+struct Texture {
+    ID3D11ShaderResourceView* srv = nullptr;
+    int width  = 0;
+    int height = 0;
+};
+
+struct Renderer {
+    ID3D11Device*           device      = nullptr;
+    ID3D11DeviceContext*    context     = nullptr;
+    IDXGISwapChain*         swapchain   = nullptr;
+    ID3D11RenderTargetView* rtv         = nullptr;
+    ID3D11VertexShader*     vs          = nullptr;
+    ID3D11PixelShader*      ps          = nullptr;
+    ID3D11InputLayout*      layout      = nullptr;
+    ID3D11SamplerState*     sampler     = nullptr;
+    ID3D11Buffer*           vbo         = nullptr;
+    ID3D11Buffer*           ibo         = nullptr;
+    ID3D11Buffer*           cbuf        = nullptr;
+    std::vector<Texture>    textures;
+    int width  = 1920;
+    int height = 1080;
+
+    bool Init(HWND hwnd, int w, int h);
+    bool LoadShaders();
+    bool CreateFullscreenQuad();
+    bool CreateSampler();
+    void Render(int texIndex = 0);
+    void Resize(int w, int h);
+    bool LoadTexture(const uint8_t* pixels, int w, int h, Texture* out);
+    void Destroy();
+};
