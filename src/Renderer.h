@@ -7,6 +7,12 @@
 
 struct Vertex { float x, y, z, u, v; };
 struct ConstantBuffer { float mvp[16]; };
+struct PsConstantBuffer {
+    float layerColor[4] = {1,1,1,1};
+    float layerAlpha = 1.0f;
+    float layerBrightness = 1.0f;
+    float _padding[2] = {0,0};
+};
 
 struct Texture {
     ID3D11ShaderResourceView* srv = nullptr;
@@ -26,6 +32,7 @@ struct Renderer {
     ID3D11Buffer*           vbo         = nullptr;
     ID3D11Buffer*           ibo         = nullptr;
     ID3D11Buffer*           cbuf        = nullptr;
+    ID3D11Buffer*           cbuf_ps     = nullptr;
     std::vector<Texture>    textures;
     int width  = 1920;
     int height = 1080;

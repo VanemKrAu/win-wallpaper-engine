@@ -156,6 +156,17 @@ bool Renderer::CreateFullscreenQuad() {
     cb.mvp[0] = cb.mvp[5] = cb.mvp[10] = cb.mvp[15] = 1.0f;
     sd.pSysMem = &cb;
     hr = device->CreateBuffer(&bd, &sd, &cbuf);
+    if (FAILED(hr)) return false;
+
+    // PS constant buffer (LayerBuffer at b1)
+    bd.ByteWidth = sizeof(PsConstantBuffer);
+    PsConstantBuffer cb_ps;
+    cb_ps.layerColor[0] = 1.0f; cb_ps.layerColor[1] = 1.0f;
+    cb_ps.layerColor[2] = 1.0f; cb_ps.layerColor[3] = 1.0f;
+    cb_ps.layerAlpha = 1.0f;
+    cb_ps.layerBrightness = 1.0f;
+    sd.pSysMem = &cb_ps;
+    hr = device->CreateBuffer(&bd, &sd, &cbuf_ps);
     return SUCCEEDED(hr);
 }
 
@@ -183,6 +194,7 @@ void Renderer::Render(int texIndex) {
     context->VSSetShader(vs, nullptr, 0);
     context->PSSetShader(ps, nullptr, 0);
     context->VSSetConstantBuffers(0, 1, &cbuf);
+    context->PSSetConstantBuffers(1, 1, &cbuf_ps);
 
     UINT stride = sizeof(Vertex);
     UINT offset = 0;
@@ -259,6 +271,7 @@ void Renderer::Destroy() {
     }
     textures.clear();
     if (rtv)       { rtv->Release();       rtv = nullptr; }
+    if (cbuf_ps)   { cbuf_ps->Release();   cbuf_ps = nullptr; }
     if (cbuf)      { cbuf->Release();      cbuf = nullptr; }
     if (ibo)       { ibo->Release();       ibo = nullptr; }
     if (vbo)       { vbo->Release();       vbo = nullptr; }

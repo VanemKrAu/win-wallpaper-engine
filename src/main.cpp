@@ -36,16 +36,16 @@ Args ParseArgs(int argc, wchar_t* argv[]) {
     return args;
 }
 
-// Check if a path looks like an image file
+// Check if a path looks like an image or tex file
 static bool IsImageFile(const std::string& name) {
     size_t dot = name.rfind('.');
     if (dot == std::string::npos) return false;
     std::string ext;
     for (size_t i = dot; i < name.size(); i++) ext.push_back((char)tolower(name[i]));
-    return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".gif";
+    return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".gif" || ext == ".tex";
 }
 
-// Scan pkg for image files
+// Scan pkg for image/tex files
 static std::vector<std::string> ScanImageFiles(const PkgFs& pkg) {
     std::vector<std::string> paths;
     for (size_t i = 0; i < pkg.Entries().size(); i++) {
@@ -58,6 +58,10 @@ static std::vector<std::string> ScanImageFiles(const PkgFs& pkg) {
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int nCmdShow) {
     (void)nCmdShow;
+    // Redirect stdout to log file for debugging
+    FILE* logFile = nullptr;
+    freopen_s(&logFile, "we_log.txt", "w", stdout);
+    freopen_s(&logFile, "we_log.txt", "a", stderr);
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (!argv) return 1;
@@ -173,7 +177,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int nCmdShow) {
             continue;
         }
 
-        DecodedImage img = DecodeImage(data);
+        // Try standard image decode first, then .tex format if needed
+        bool isTex = texPaths[i].size() > 4 &&
+            (texPaths[i].substr(texPaths[i].size() - 4) == ".tex" ||
+             texPaths[i].substr(texPaths[i].size() - 4) == ".TEX");
+        DecodedImage img;
+        if (isTex) {
+            img = DecodeTexFile(data);
+            if (!img.Valid()) img = DecodeImage(data);
+        } else {
+            img = DecodeImage(data);
+            if (!img.Valid()) img = DecodeTexFile(data);
+        }
         if (!img.Valid()) {
             printf("  SKIP (decode failed): %s (%zu bytes)\n", texPaths[i].c_str(), data.size());
             continue;
