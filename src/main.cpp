@@ -18,8 +18,8 @@ void PrintUsage() {
 
 struct Args {
     std::wstring pkgPath;
-    int width  = 1920;
-    int height = 1080;
+    int width  = 3840;
+    int height = 2160;
 };
 
 Args ParseArgs(int argc, wchar_t* argv[]) {
@@ -76,6 +76,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int nCmdShow) {
     LocalFree(argv);
 
     if (args.pkgPath.empty()) { PrintUsage(); return 1; }
+
+    if (args.width == 3840 && args.height == 2160) {
+        args.width  = GetSystemMetrics(SM_CXSCREEN);
+        args.height = GetSystemMetrics(SM_CYSCREEN);
+        printf("Auto screen: %dx%d\n", args.width, args.height);
+    }
 
     wprintf(L"Loading: %s\n", args.pkgPath.c_str());
 
@@ -174,7 +180,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int nCmdShow) {
                         VideoFrame firstFrame;
                         if (dec->DecodeNextFrame(firstFrame) && firstFrame.valid) {
                             printf("    -> first frame decoded: %dx%d\n", firstFrame.width, firstFrame.height);
-                            if (renderer.LoadTexture(firstFrame.pixels.data(), firstFrame.width, firstFrame.height, rt)) {
+                            if (renderer.LoadTexture(firstFrame.rgba.data(), firstFrame.width, firstFrame.height, rt)) {
                                 rt->isVideo = true;
                                 rt->decoder = dec;
                                 rt->videoTexIdx = (int)off;
@@ -256,38 +262,20 @@ next_texture:;
         if (texIndex >= 0 && texIndex < (int)renderTextures.size() && now - lastFrameTime > 30) {
             RenderTexture* rt = renderTextures[texIndex];
             if (rt->isVideo && rt->decoder) {
-                // Lazy-decode first frame
-                if (rt->width == 64 && rt->height == 64) {
-                    VideoFrame firstFrame;
-                    if (rt->decoder->DecodeNextFrame(firstFrame) && firstFrame.valid) {
-                        ID3D11ShaderResourceView* oldSrv = rt->srv;
-                        if (renderer.LoadTexture(firstFrame.pixels.data(), firstFrame.width, firstFrame.height, rt)) {
-                            if (oldSrv) oldSrv->Release();
-                            // Sync the renderer's copy
-                            renderer.textures[texIndex].srv = rt->srv;
-                            renderer.textures[texIndex].width = rt->width;
-                            renderer.textures[texIndex].height = rt->height;
-                        }
+                VideoFrame frame;
+                if (rt->decoder->DecodeNextFrame(frame) && frame.valid) {
+                    if (false && renderer.vp) {
+                        renderer.ProcessVideoFrame(frame.yPlane.data(), frame.uvPlane.data(), frame.width, frame.height);
+                    } else {
+                        renderer.LoadTexture(frame.rgba.data(), frame.width, frame.height, rt);
+                        renderer.textures[texIndex].srv = rt->srv;
                     }
                 } else {
-                    VideoFrame frame;
-                    if (rt->decoder->DecodeNextFrame(frame) && frame.valid) {
-                        ID3D11ShaderResourceView* oldSrv = rt->srv;
-                        if (renderer.LoadTexture(frame.pixels.data(), frame.width, frame.height, rt)) {
-                            if (oldSrv) oldSrv->Release();
-                            // Sync the renderer's copy
-                            renderer.textures[texIndex].srv = rt->srv;
-                            renderer.textures[texIndex].width = rt->width;
-                            renderer.textures[texIndex].height = rt->height;
-                        }
-                    } else {
-                        rt->decoder->SeekToStart();
-                    }
+                    rt->decoder->SeekToStart();
                 }
                 lastFrameTime = now;
             }
         }
-
         renderer.Render(texIndex);
     }
 

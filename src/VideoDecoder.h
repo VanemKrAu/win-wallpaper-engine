@@ -3,7 +3,13 @@
 #include <cstdint>
 
 struct VideoFrame {
-    std::vector<uint8_t> pixels;
+    // RGBA output (legacy)
+    std::vector<uint8_t> rgba;
+    bool isRGBA = true;
+    
+    // NV12 output (GPU-native)
+    std::vector<uint8_t> yPlane;   // full res, 8-bit luma
+    std::vector<uint8_t> uvPlane;  // half res, interleaved U,V
     int width  = 0;
     int height = 0;
     bool valid = false;

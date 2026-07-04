@@ -78,17 +78,72 @@ bool VideoDecoder::DecodeNextFrame(VideoFrame& frame) {
     }
     if (gotFrame) {
         int w = avFrame->width, h = avFrame->height;
+        frame.width = w; frame.height = h;
+        frame.isRGBA = true;
+
+        // Convert to RGBA via sws_scale
         SwsContext* swsCtx = (SwsContext*)m_swsCtx;
         swsCtx = sws_getCachedContext(swsCtx, w, h, (AVPixelFormat)avFrame->format,
-            w, h, AV_PIX_FMT_RGBA, SWS_BILINEAR, NULL, NULL, NULL);
+            w, h, AV_PIX_FMT_RGBA, SWS_LANCZOS, NULL, NULL, NULL);
         m_swsCtx = swsCtx;
         if (swsCtx) {
-            frame.pixels.resize((size_t)w * h * 4);
-            uint8_t* dst[] = { frame.pixels.data() };
+            frame.rgba.resize((size_t)w * h * 4);
+            uint8_t* dst[] = { frame.rgba.data() };
             int dstStride[] = { w * 4 };
             sws_scale(swsCtx, avFrame->data, avFrame->linesize, 0, h, dst, dstStride);
-            frame.width = w; frame.height = h; frame.valid = true;
         }
+
+        // Also extract NV12 planes for GPU-native path
+        // Extract Y plane (full resolution)
+        size_t ySize = (size_t)w * h;
+        frame.yPlane.resize(ySize);
+        if (avFrame->linesize[0] == w) {
+            memcpy(frame.yPlane.data(), avFrame->data[0], ySize);
+        } else {
+            for (int row = 0; row < h; row++)
+                memcpy(frame.yPlane.data() + row * w, avFrame->data[0] + row * avFrame->linesize[0], w);
+        }
+
+        // Extract UV plane (half resolution, interleaved)
+        size_t uvW = (size_t)(w / 2), uvH = (size_t)(h / 2);
+        size_t uvSize = uvW * uvH * 2;
+        frame.uvPlane.resize(uvSize);
+        if (avFrame->format == AV_PIX_FMT_YUV420P || avFrame->format == AV_PIX_FMT_YUVJ420P) {
+            // Interleave U and V planes
+            for (size_t row = 0; row < uvH; row++) {
+                const uint8_t* uSrc = avFrame->data[1] + row * avFrame->linesize[1];
+                const uint8_t* vSrc = avFrame->data[2] + row * avFrame->linesize[2];
+                uint8_t* dst = frame.uvPlane.data() + row * uvW * 2;
+                for (size_t col = 0; col < uvW; col++) {
+                    *dst++ = *uSrc++;
+                    *dst++ = *vSrc++;
+                }
+            }
+        } else if (avFrame->format == AV_PIX_FMT_NV12) {
+            memcpy(frame.uvPlane.data(), avFrame->data[1], uvSize);
+        } else {
+            // Convert to YUV420P first via sws_scale
+            SwsContext* sws = sws_getContext(w, h, (AVPixelFormat)avFrame->format, w, h, AV_PIX_FMT_YUV420P, SWS_BILINEAR, NULL, NULL, NULL);
+            if (sws) {
+                AVFrame* yuvFrame = av_frame_alloc();
+                yuvFrame->width = w; yuvFrame->height = h; yuvFrame->format = AV_PIX_FMT_YUV420P;
+                av_frame_get_buffer(yuvFrame, 0);
+                sws_scale(sws, avFrame->data, avFrame->linesize, 0, h, yuvFrame->data, yuvFrame->linesize);
+                // Y plane
+                for (int row = 0; row < h; row++)
+                    memcpy(frame.yPlane.data() + row * w, yuvFrame->data[0] + row * yuvFrame->linesize[0], w);
+                // UV interleaved
+                for (size_t row = 0; row < uvH; row++) {
+                    const uint8_t* uSrc = yuvFrame->data[1] + row * yuvFrame->linesize[1];
+                    const uint8_t* vSrc = yuvFrame->data[2] + row * yuvFrame->linesize[2];
+                    uint8_t* dst = frame.uvPlane.data() + row * uvW * 2;
+                    for (size_t col = 0; col < uvW; col++) { *dst++ = *uSrc++; *dst++ = *vSrc++; }
+                }
+                av_frame_free(&yuvFrame);
+                sws_freeContext(sws);
+            }
+        }
+        frame.valid = true;
     }
     av_frame_free(&avFrame);
     av_packet_free(&packet);

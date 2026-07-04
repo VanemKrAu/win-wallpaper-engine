@@ -82,6 +82,19 @@ bool Renderer::Init(HWND hwnd, int w, int h) {
     );
     if (FAILED(hr)) return false;
 
+    // Init D3D11 Video Processor (hardware YUV→RGB)
+    if (SUCCEEDED(device->QueryInterface(__uuidof(ID3D11VideoDevice), (void**)&vd)))
+        context->QueryInterface(__uuidof(ID3D11VideoContext), (void**)&vc);
+    if (vd && vc) {
+        D3D11_VIDEO_PROCESSOR_CONTENT_DESC d = {};
+        d.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
+        d.InputWidth = 3840; d.InputHeight = 2160;
+        d.OutputWidth = 3840; d.OutputHeight = 2160;
+        d.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
+        if (SUCCEEDED(vd->CreateVideoProcessorEnumerator(&d, &vpe)) && vpe)
+            vd->CreateVideoProcessor(vpe, 0, &vp);
+    }
+
     // Compile shaders from source
     if (!LoadShaders()) return false;
     if (!CreateFullscreenQuad()) return false;
@@ -138,7 +151,7 @@ bool Renderer::LoadShaders() {
 bool Renderer::CreateFullscreenQuad() {
     D3D11_BUFFER_DESC bd = {};
     bd.ByteWidth      = sizeof(g_quadVertices);
-    bd.Usage          = D3D11_USAGE_IMMUTABLE;
+    bd.Usage          = D3D11_USAGE_DEFAULT; // allow update for aspect ratio
     bd.BindFlags      = D3D11_BIND_VERTEX_BUFFER;
     bd.StructureByteStride = sizeof(Vertex);
 
@@ -276,6 +289,38 @@ bool Renderer::LoadTexture(const uint8_t* pixels, int w, int h, Texture* out) {
     return true;
 }
 
+
+void Renderer::ProcessVideoFrame(const uint8_t* y, const uint8_t* uv, int tw, int th) {
+    if (!vd || !vp || !vpe || !y || !uv) return;
+    D3D11_TEXTURE2D_DESC td = {};
+    td.Width = tw; td.Height = th; td.MipLevels = 1; td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_NV12; td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    D3D11_SUBRESOURCE_DATA sd[2] = {};
+    sd[0].pSysMem = y; sd[0].SysMemPitch = tw;
+    sd[1].pSysMem = uv; sd[1].SysMemPitch = tw;
+    ID3D11Texture2D* nt = nullptr;
+    if (FAILED(device->CreateTexture2D(&td, sd, &nt))) return;
+    D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC iv = {};
+    iv.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
+    iv.Texture2D.MipSlice = 0; iv.Texture2D.ArraySlice = 0;
+    ID3D11VideoProcessorInputView* inp = nullptr;
+    if (FAILED(vd->CreateVideoProcessorInputView(nt, vpe, &iv, &inp))) { nt->Release(); return; }
+    ID3D11Texture2D* bb = nullptr;
+    swapchain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb);
+    if (!bb) { inp->Release(); nt->Release(); return; }
+    D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC ov = {};
+    ov.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
+    ID3D11VideoProcessorOutputView* outv = nullptr;
+    HRESULT hr = vd->CreateVideoProcessorOutputView(bb, vpe, &ov, &outv);
+    bb->Release();
+    if (FAILED(hr)) { inp->Release(); nt->Release(); return; }
+    D3D11_VIDEO_PROCESSOR_STREAM s = {};
+    s.Enable = TRUE; s.pInputSurface = inp;
+    vc->VideoProcessorBlt(vp, outv, 0, 1, &s);
+    vpActive = true;
+    outv->Release(); inp->Release(); nt->Release();
+}
+
 void Renderer::Destroy() {
     for (size_t i = 0; i < textures.size(); i++) {
         if (textures[i].srv) textures[i].srv->Release();
@@ -293,5 +338,9 @@ void Renderer::Destroy() {
     if (vs)        { vs->Release();        vs = nullptr; }
     if (swapchain) { swapchain->Release(); swapchain = nullptr; }
     if (context)   { context->Release();   context = nullptr; }
+    if (vpe) { vpe->Release(); vpe = nullptr; }
+    if (vp)  { vp->Release(); vp = nullptr; }
+    if (vc)  { vc->Release(); vc = nullptr; }
+    if (vd)  { vd->Release(); vd = nullptr; }
     if (device)    { device->Release();    device = nullptr; }
 }
