@@ -88,6 +88,13 @@ bool Renderer::Init(HWND hwnd, int w, int h) {
     if (!CreateSampler()) return false;
 
     Resize(w, h);
+
+    // Create rasterizer state with culling disabled (our quads are CW)
+    D3D11_RASTERIZER_DESC rd = {};
+    rd.FillMode = D3D11_FILL_SOLID;
+    rd.CullMode = D3D11_CULL_NONE;
+    rd.DepthClipEnable = TRUE;
+    device->CreateRasterizerState(&rd, &rasterState);
     return true;
 }
 
@@ -184,12 +191,15 @@ bool Renderer::CreateSampler() {
 void Renderer::Render(int texIndex) {
     if (!context || !swapchain || !rtv) return;
 
-    float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f}; // black
     context->ClearRenderTargetView(rtv, clearColor);
 
     D3D11_VIEWPORT vp = {0, 0, (float)width, (float)height, 0, 1};
     context->RSSetViewports(1, &vp);
     context->OMSetRenderTargets(1, &rtv, nullptr);
+
+    // Set rasterizer state (no culling - our quads are clockwise)
+    if (rasterState) context->RSSetState(rasterState);
 
     context->VSSetShader(vs, nullptr, 0);
     context->PSSetShader(ps, nullptr, 0);
@@ -271,6 +281,7 @@ void Renderer::Destroy() {
     }
     textures.clear();
     if (rtv)       { rtv->Release();       rtv = nullptr; }
+    if (rasterState) { rasterState->Release(); rasterState = nullptr; }
     if (cbuf_ps)   { cbuf_ps->Release();   cbuf_ps = nullptr; }
     if (cbuf)      { cbuf->Release();      cbuf = nullptr; }
     if (ibo)       { ibo->Release();       ibo = nullptr; }

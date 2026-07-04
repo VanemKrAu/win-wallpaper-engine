@@ -20,11 +20,13 @@ static bool ReadSizedString(HANDLE h, std::string& out) {
     return true;
 }
 
-// Path normalization: lowercase + always start with /
+// Path normalization: lowercase + ensure leading /
 static std::string NormalizePath(const std::string& raw) {
     std::string s;
     s.reserve(raw.size() + 1);
-    s += '/';
+    // Only add leading / if not already present
+    bool hasLeading = !raw.empty() && (raw[0] == '/' || raw[0] == '\\');
+    if (!hasLeading) s += '/';
     for (size_t i = 0; i < raw.size(); i++) {
         char c = raw[i];
         // convert backslash to forward slash

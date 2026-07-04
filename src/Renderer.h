@@ -25,6 +25,7 @@ struct Renderer {
     ID3D11DeviceContext*    context     = nullptr;
     IDXGISwapChain*         swapchain   = nullptr;
     ID3D11RenderTargetView* rtv         = nullptr;
+    ID3D11RasterizerState*  rasterState = nullptr;
     ID3D11VertexShader*     vs          = nullptr;
     ID3D11PixelShader*      ps          = nullptr;
     ID3D11InputLayout*      layout      = nullptr;

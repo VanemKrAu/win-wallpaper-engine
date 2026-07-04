@@ -18,26 +18,29 @@ DecodedImage DecodeImage(const std::vector<uint8_t>& data) {
     return result;
 }
 
-// Read a 9-byte version stamp like "TEXV0005\0", return numeric version
 static bool Read9Ver(const uint8_t*& ptr, size_t& rem, int& ver) {
     if (rem < 9) return false;
     char buf[9]; std::memcpy(buf, ptr, 9);
     ptr += 9; rem -= 9;
-    // buf should be like "TEXV0005\0" but could be "TEXI0001\0"
     if (buf[4] < '0' || buf[4] > '9') return false;
     int v = 0;
     for (int i = 4; i < 8; i++) {
         if (buf[i] >= '0' && buf[i] <= '9') v = v * 10 + (buf[i] - '0');
     }
-    ver = v;
-    return true;
+    ver = v; return true;
 }
 
-// Read int32 from buffer
 static int32_t ReadI32(const uint8_t*& ptr, size_t& rem) {
     int32_t v = 0;
     if (rem >= 4) { std::memcpy(&v, ptr, 4); ptr += 4; rem -= 4; }
     return v;
+}
+
+// Check if data is MP4 video (ISO BMFF ftyp box) or WebM (EBML header)
+static bool IsVideoData(const uint8_t* data, size_t size) {
+    if (size >= 12 && std::memcmp(data + 4, "ftyp", 4) == 0) return true;
+    if (size >= 4 && data[0] == 0x1A && data[1] == 0x45 && data[2] == 0xDF && data[3] == 0xA3) return true;
+    return false;
 }
 
 DecodedImage DecodeTexFile(const std::vector<uint8_t>& data) {
@@ -47,18 +50,15 @@ DecodedImage DecodeTexFile(const std::vector<uint8_t>& data) {
     const uint8_t* ptr = data.data();
     size_t rem = data.size();
 
-    // 1. Read three version stamps (9 bytes each)
     int texv = 0, texi = 0, texb = 0;
     if (!Read9Ver(ptr, rem, texv)) return result;
     if (!Read9Ver(ptr, rem, texi)) return result;
 
-    // 2. Read format + flags
     int32_t format = ReadI32(ptr, rem);
     uint32_t flags = 0;
     if (rem >= 4) { std::memcpy(&flags, ptr, 4); ptr += 4; rem -= 4; }
     (void)flags;
 
-    // 3. Read dimensions
     int32_t width  = ReadI32(ptr, rem);
     int32_t height = ReadI32(ptr, rem);
     int32_t mapW   = ReadI32(ptr, rem);
@@ -66,10 +66,8 @@ DecodedImage DecodeTexFile(const std::vector<uint8_t>& data) {
     int32_t unk    = ReadI32(ptr, rem);
     (void)mapW; (void)mapH; (void)unk;
 
-    // 4. Read texb body version
     if (!Read9Ver(ptr, rem, texb)) return result;
 
-    // 5. Read image count + optional fields
     int32_t imageCount = ReadI32(ptr, rem);
     if (imageCount < 0) return result;
     if (imageCount == 0) imageCount = 1;
@@ -78,7 +76,6 @@ DecodedImage DecodeTexFile(const std::vector<uint8_t>& data) {
     if (texb >= 3) imageType = ReadI32(ptr, rem);
     if (texb >= 4) ReadI32(ptr, rem); // reserved
 
-    // 6. Read first image's mip levels
     for (int32_t img = 0; img < imageCount && rem > 0; img++) {
         int32_t mipCount = ReadI32(ptr, rem);
         if (mipCount <= 0) continue;
@@ -95,48 +92,52 @@ DecodedImage DecodeTexFile(const std::vector<uint8_t>& data) {
             int32_t srcSize = ReadI32(ptr, rem);
             if (srcSize <= 0 || srcSize > (int32_t)rem) break;
 
-            std::vector<uint8_t> rawData(ptr, ptr + srcSize);
+            const uint8_t* dataStart = ptr;
+            size_t dataSize = (size_t)srcSize;
+
+            // Skip video content (MP4/WebM)
+            if (IsVideoData(dataStart, dataSize)) {
+                ptr += srcSize; rem -= srcSize;
+                continue;
+            }
+
+            // Read the raw data
+            std::vector<uint8_t> rawData(dataStart, dataStart + srcSize);
             ptr += srcSize; rem -= srcSize;
 
             std::vector<uint8_t> pixels;
-            int outW = mipW, outH = mipH;
 
             if (lz4Flag && decompSize > 0) {
                 pixels.resize((size_t)decompSize);
                 int ret = LZ4_decompress_safe(
                     (const char*)rawData.data(), (char*)pixels.data(),
                     (int)rawData.size(), decompSize);
-                if (ret < 0) continue; // decompress failed
+                if (ret < decompSize) continue;
             } else {
                 pixels = std::move(rawData);
                 decompSize = srcSize;
             }
 
-            // Try stb_image on decompressed data
+            // Try stb_image first
             if (mip == 0) {
                 result = DecodeImage(pixels);
                 if (result.Valid()) return result;
             }
 
-            // If stb_image failed and format is RGBA8 (0), use raw pixels
+            // For RGBA8 (format=0), use raw decompressed pixels
             if (format == 0 && mip == 0) {
                 if ((size_t)mipW * mipH * 4 <= pixels.size()) {
                     result.width = mipW;
                     result.height = mipH;
                     result.channels = 4;
-                    result.pixels.resize((size_t)mipW * mipH * 4);
-                    std::memcpy(result.pixels.data(), pixels.data(),
-                        (size_t)mipW * mipH * 4);
+                    result.pixels.assign(pixels.data(), pixels.data() + (size_t)mipW * mipH * 4);
                     return result;
                 }
             }
 
-            // For DXT5/BC3 (format=4), cannot decode in software.
-            // Will be uploaded directly to GPU as compressed texture.
-            // Return the compressed data wrapped for now.
+            // For DXT5/BC3 (format=4), skip (can't decode in software)
             if (format == 4 && mip == 0) {
-                // Signal to caller: this is BC3 compressed data
-                result.width = -format; // negative signals format
+                result.width = -4; // negative signals BC3
                 result.height = mipW;
                 result.channels = mipH;
                 result.pixels = std::move(pixels);
