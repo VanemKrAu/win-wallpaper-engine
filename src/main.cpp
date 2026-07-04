@@ -18,8 +18,8 @@ void PrintUsage() {
 
 struct Args {
     std::wstring pkgPath;
-    int width  = 1280;
-    int height = 720;
+    int width  = 1920;
+    int height = 1080;
 };
 
 Args ParseArgs(int argc, wchar_t* argv[]) {

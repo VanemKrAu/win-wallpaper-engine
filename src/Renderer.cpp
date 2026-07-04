@@ -179,7 +179,8 @@ bool Renderer::CreateFullscreenQuad() {
 
 bool Renderer::CreateSampler() {
     D3D11_SAMPLER_DESC sd = {};
-    sd.Filter         = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sd.Filter         = D3D11_FILTER_ANISOTROPIC;
+    sd.MaxAnisotropy  = 16;
     sd.AddressU       = D3D11_TEXTURE_ADDRESS_CLAMP;
     sd.AddressV       = D3D11_TEXTURE_ADDRESS_CLAMP;
     sd.AddressW       = D3D11_TEXTURE_ADDRESS_CLAMP;
