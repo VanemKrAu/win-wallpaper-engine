@@ -130,3 +130,4 @@ Wallpaper Engine 的 `.pkg` 文件是一种简单的归档格式：
 - [stb](https://github.com/nothings/stb) — 单头文件图像库
 - [nlohmann/json](https://github.com/nlohmann/json) — JSON 解析库
 - [lz4](https://github.com/lz4/lz4) — 快速压缩算法
+# Updated
