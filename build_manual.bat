@@ -32,9 +32,6 @@ cl %CF% /c "%SRC%\VideoDecoder.cpp" || exit /b 1
 echo VideoDecoder OK
 cl %CF% /c "%SRC%\main.cpp" || exit /b 1
 echo main OK
-echo LINKING
-link /nologo /OUT:"%OUT%\win-wallpaper-engine.exe" /MACHINE:X64 /SUBSYSTEM:WINDOWS "%OUT%\lz4.obj" "%OUT%\stb_image.obj" "%OUT%\PkgFs.obj" "%OUT%\SceneDocument.obj" "%OUT%\TexParser.obj" "%OUT%\WallpaperWindow.obj" "%OUT%\Renderer.obj" "%OUT%\VideoDecoder.obj" "%OUT%\main.obj" d3d11.lib dxgi.lib d3dcompiler.lib user32.lib gdi32.lib ole32.lib shell32.lib "%FFMPEG%\avcodec-61.lib" "%FFMPEG%\avformat-61.lib" "%FFMPEG%\avutil-59.lib" "%FFMPEG%\swscale-8.lib"
-if %ERRORLEVEL% NEQ 0 exit /b 1
+link /nologo /OUT:"%OUT%\win-wallpaper-engine.exe" /MACHINE:X64 /SUBSYSTEM:WINDOWS "%OUT%\lz4.obj" "%OUT%\stb_image.obj" "%OUT%\PkgFs.obj" "%OUT%\SceneDocument.obj" "%OUT%\TexParser.obj" "%OUT%\WallpaperWindow.obj" "%OUT%\Renderer.obj" "%OUT%\VideoDecoder.obj" "%OUT%\main.obj" d3d11.lib dxgi.lib d3dcompiler.lib user32.lib gdi32.lib ole32.lib shell32.lib "%FFMPEG%\avcodec-61.lib" "%FFMPEG%\avformat-61.lib" "%FFMPEG%\avutil-59.lib" "%FFMPEG%\swscale-8.lib" || exit /b 1
 copy "%FFMPEG%\bin\*.dll" "%OUT%" >NUL 2>&1
-echo SUCCESS
 dir "%OUT%\win-wallpaper-engine.exe"
